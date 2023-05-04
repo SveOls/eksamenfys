@@ -5,7 +5,7 @@ use std::{
 
 use plotters::prelude::*;
 
-pub fn data_manage(path: &str) -> Result<Vec<[f64; 4]>, Box<dyn Error>> {
+pub fn _data_manage(path: &str) -> Result<Vec<[f64; 4]>, Box<dyn Error>> {
     let mut tempdata = [f64::NAN; 4];
     let mut data1 = Vec::new();
     for i in BufReader::new(std::fs::File::open(format!("{path}.txt"))?)
@@ -56,89 +56,115 @@ pub fn data_manage(path: &str) -> Result<Vec<[f64; 4]>, Box<dyn Error>> {
     Ok(data2)
 }
 
-pub fn draw2(data: Vec<[[f64; 4]; 2]>) -> Result<(), Box<dyn Error>> {
-    println!("{data:?}");
-
-    let root = BitMapBackend::new("out.png", (1024, 768)).into_drawing_area();
+/// x axis: sweeps
+///
+/// y_left: checking (1 = energy, 2 = end to end, 3 = rog)
+///
+/// y_right: temperature
+pub fn doubledraw(
+    data: &[[f64; 4]],
+    checking: usize,
+    save: &str,
+    title: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
+    let root = BitMapBackend::new(save, (1024, 768)).into_drawing_area();
     root.fill(&WHITE)?;
 
-    let checking = 1;
-    // let min = data
-    //     .iter()
-    //     .map(|x| x[checking])
-    //     .min_by(|x, y| x.partial_cmp(y).unwrap())
-    //     .unwrap();
-    // let max = data
-    //     .iter()
-    //     .map(|x| x[checking])
-    //     .max_by(|x, y| x.partial_cmp(y).unwrap())
-    //     .unwrap();
+    let data = &data[data.len()/10..9*data.len()/10];
 
-    // let mut chart = ChartBuilder::on(&root)
-    //     .x_label_area_size(40)
-    //     .y_label_area_size(40)
-    //     .caption("M", ("sans-serif", 50.0).into_font())
-    //     .build_cartesian_2d(0..data.len(), min..max)?;
-
-    // chart.configure_mesh().draw()?;
-
-    // chart.draw_series(LineSeries::new(
-    //     data.iter().enumerate().map(|(x, y)| (x, y[checking])),
-    //     &BLUE,
-    // ))?;
-
-    let minv = data
+    let maxt = data
         .iter()
-        .map(|x| x[0][checking].min(x[1][checking]))
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let maxv = data
-        .iter()
-        .map(|x| x[0][checking].max(x[1][checking]))
+        .enumerate()
+        .map(|(_, x)| x[0])
         .max_by(|x, y| x.partial_cmp(y).unwrap())
         .unwrap();
     let mint = data
         .iter()
-        .map(|x| x[0][0].min(x[1][0]))
+        .enumerate()
+        .map(|(_, x)| x[0])
         .min_by(|x, y| x.partial_cmp(y).unwrap())
         .unwrap();
-    let maxt = data
-        .iter()
-        .map(|x| x[0][0].max(x[1][0]))
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
 
-    // println!("{:?}", data.iter().enumerate().max_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
-    // println!("{:?}", data.iter().enumerate().min_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
+    let minsw = 0;
+    let maxsw =
+        data.iter().filter(|x| x[0] > mint).count() + data.iter().filter(|x| x[0] == maxt).count();
+
+
+    let avg_high = data.iter().filter(|x| x[0] > (maxt - mint)*0.95 + mint).map(|x| x[checking]).enumerate().fold(0.0, |acc, x| (x.0 as f64 * acc + x.1) / (x.0+1) as f64);
+    let avg_low  = data.iter().filter(|x| x[0] < (maxt - mint)*0.05 + mint).map(|x| x[checking]).enumerate().fold(0.0, |acc, x| (x.0 as f64 * acc + x.1) / (x.0+1) as f64);
 
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(40)
         .y_label_area_size(40)
-        .caption("M", ("sans-serif", 50.0).into_font())
-        .build_cartesian_2d(mint..maxt, minv..maxv)?;
+        .right_y_label_area_size(40)
+        .caption(title.unwrap_or_default(), ("sans-serif", 50.0).into_font())
+        .build_cartesian_2d(minsw..maxsw, (avg_low - (avg_high - avg_low) / 10.0)..(avg_high + (avg_high - avg_low) / 10.0))?
+        .set_secondary_coord(minsw..maxsw, (mint - (maxt - mint) / 10.0)..(maxt + (maxt - mint) / 10.0));
 
-    chart.configure_mesh().draw()?;
+    chart.configure_secondary_axes().draw()?;
+    chart.configure_mesh().max_light_lines(1).draw()?;
 
     chart.draw_series(LineSeries::new(
-        data.iter().map(|y| (y[0][0], y[0][checking])),
+        data.iter()
+            .enumerate()
+            .map(|(i, y)| (i, y[checking])),
         &BLUE,
     ))?;
-
-    chart.draw_series(LineSeries::new(
-        data.iter().map(|y| (y[1][0], y[1][checking])),
-        &RED,
-    ))?;
-
+    chart.draw_secondary_series(LineSeries::new(data.iter().map(|y| y[0]).enumerate(), &RED))?;
 
     Ok(())
 }
-pub fn draw(data: Vec<[f64; 4]>) -> Result<(), Box<dyn Error>> {
-    println!("{data:?}");
 
-    let root = BitMapBackend::new("out1.png", (1024, 768)).into_drawing_area();
+pub fn singledraw(
+    data: &Vec<[f64; 4]>,
+    checking: usize,
+    save: &str,
+    title: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
+    let root = BitMapBackend::new(save, (1024, 768)).into_drawing_area();
     root.fill(&WHITE)?;
 
-    let checking = 1;
+    let minv = data
+        .iter()
+        .map(|x| x[checking])
+        .min_by(|x, y| x.partial_cmp(y).unwrap())
+        .unwrap();
+    let maxv = data
+        .iter()
+        .map(|x| x[checking])
+        .max_by(|x, y| x.partial_cmp(y).unwrap())
+        .unwrap();
+    let mint = 0;
+    let maxt = data.len();
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(40)
+        .y_label_area_size(40)
+        .caption(title.unwrap_or_default(), ("sans-serif", 50.0).into_font())
+        .build_cartesian_2d(mint..maxt, minv..maxv)?;
+
+    chart.configure_mesh().max_light_lines(1).draw()?;
+
+    chart.draw_series(LineSeries::new(
+        data.iter().map(|y| y[checking]).enumerate(),
+        &BLUE,
+    ))?;
+
+    Ok(())
+}
+
+pub fn phasedraw(
+    data: &[[f64; 4]],
+    checking: usize,
+    save: &str,
+    title: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
+    // println!("{data:?}");
+
+    let data = &data[data.len()/10..9*data.len()/10];
+
+    let root = BitMapBackend::new(save, (1024, 768)).into_drawing_area();
+    root.fill(&WHITE)?;
 
     let minv = data
         .iter()
@@ -169,104 +195,16 @@ pub fn draw(data: Vec<[f64; 4]>) -> Result<(), Box<dyn Error>> {
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(40)
         .y_label_area_size(40)
-        .caption("E", ("sans-serif", 50.0).into_font())
+        .caption(title.unwrap_or_default(), ("sans-serif", 50.0).into_font())
         .build_cartesian_2d(mint..maxt, minv..maxv)?;
 
-    chart.configure_mesh().draw()?;
+    chart.configure_mesh().max_light_lines(1).draw()?;
 
     chart.draw_series(LineSeries::new(
-        data.iter().map(|y| (y[0], y[checking])).filter(|x| x.0 != 20.0 && x.0 != 1.0),
+        data.iter()
+            .map(|y| (y[0], y[checking]))
+            .filter(|x| x.0 != 20.0 && x.0 != 1.0),
         &BLUE,
     ))?;
-
-
-    let root = BitMapBackend::new("out2.png", (1024, 768)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let checking = 2;
-
-    let minv = data
-        .iter()
-        .filter(|x| x[0] != 20.0 && x[0] != 1.0)
-        .map(|x| x[checking])
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let maxv = data
-        .iter()
-        .filter(|x| x[0] != 20.0 && x[0] != 1.0)
-        .map(|x| x[checking])
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let mint = data
-        .iter()
-        .map(|x| x[0])
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let maxt = data
-        .iter()
-        .map(|x| x[0])
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-
-    // println!("{:?}", data.iter().enumerate().max_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
-    // println!("{:?}", data.iter().enumerate().min_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
-
-    let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(40)
-        .y_label_area_size(40)
-        .caption("e2e", ("sans-serif", 50.0).into_font())
-        .build_cartesian_2d(mint..maxt, minv..maxv)?;
-
-    chart.configure_mesh().draw()?;
-
-    chart.draw_series(LineSeries::new(
-        data.iter().map(|y| (y[0], y[checking])).filter(|x| x.0 != 20.0 && x.0 != 1.0),
-        &BLUE,
-    ))?;
-
-    let root = BitMapBackend::new("out3.png", (1024, 768)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let checking = 3;
-
-    let minv = data
-        .iter()
-        .filter(|x| x[0] != 20.0 && x[0] != 1.0)
-        .map(|x| x[checking])
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let maxv = data
-        .iter()
-        .filter(|x| x[0] != 20.0 && x[0] != 1.0)
-        .map(|x| x[checking])
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let mint = data
-        .iter()
-        .map(|x| x[0])
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let maxt = data
-        .iter()
-        .map(|x| x[0])
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-
-    // println!("{:?}", data.iter().enumerate().max_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
-    // println!("{:?}", data.iter().enumerate().min_by(|x, y| x.1[checking].partial_cmp(&y.1[checking]).unwrap()));
-
-    let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(40)
-        .y_label_area_size(40)
-        .caption("rog", ("sans-serif", 50.0).into_font())
-        .build_cartesian_2d(mint..maxt, minv..maxv)?;
-
-    chart.configure_mesh().draw()?;
-
-    chart.draw_series(LineSeries::new(
-        data.iter().map(|y| (y[0], y[checking])).filter(|x| x.0 != 20.0 && x.0 != 1.0),
-        &BLUE,
-    ))?;
-
     Ok(())
 }
