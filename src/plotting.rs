@@ -123,7 +123,6 @@ pub fn singledraw(
 ) -> Result<(), Box<dyn Error>> {
     let root = BitMapBackend::new(save, (1024, 768)).into_drawing_area();
     root.fill(&WHITE)?;
-
     let minv = data
         .iter()
         .map(|x| x[checking])
@@ -140,6 +139,7 @@ pub fn singledraw(
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(40)
         .y_label_area_size(40)
+        .margin(10)
         .caption(title.unwrap_or_default(), ("sans-serif", 50.0).into_font())
         .build_cartesian_2d(mint..maxt, minv..maxv)?;
 
